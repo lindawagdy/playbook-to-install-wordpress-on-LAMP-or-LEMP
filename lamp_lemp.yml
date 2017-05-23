@@ -1,0 +1,324 @@
+- hosts: all
+  tasks:
+
+    - name: mariadb installation
+      yum: pkg={{ item }}
+      with_items:
+        - mariadb-server
+        - mariadb
+        - MySQL-python
+
+    - name: starting mariadb
+      service: name=mariadb state=started enabled=yes
+
+    - name: configuration mariadb
+      mysql_db:
+        name: wordpressdb
+        state: present
+
+    - name: creating user
+      mysql_user:
+        name: 'wordpress'
+        password: wordpress
+        priv: '*.*:ALL'
+        state: present
+
+    - name: apache installation 
+      yum: name=httpd state=present
+      when:
+      - stack == "lamp"
+
+    - name: starting service
+      service: name=httpd state=started enabled=yes
+      when:
+      - stack == "lamp"
+
+    - name: changing document root
+      replace:
+        path: /etc/httpd/conf/httpd.conf
+        regexp: 'var/www/html'
+        replace: 'var/www/html/wordpress'
+      when:
+      - stack == "lamp"
+
+
+    - name: install epel-release
+      yum: name=epel-release state=present
+      when:
+      - stack == "lemp"
+
+
+    - name: nginx installation
+      yum: name=nginx state=present
+      when:
+      - stack == "lemp"
+
+    - name: starting service
+      service: name=nginx state=started enabled=yes
+      when:
+      - stack == "lemp"
+
+    - name: php modules installation
+      yum: pkg={{ item }}
+      with_items:
+        - php
+        - php-fpm
+        - php-mysql
+
+    - name: starting php
+      service: name=php-fpm state=started enabled=yes
+
+
+    - name: php configuration
+      replace:
+        path: /etc/php.ini
+        regexp: '#cgi.fix_pathinfo=1'
+        replace: 'cgi.fix_pathinfo=0'
+      when:
+      - stack == "lemp"
+
+
+    - name: php configuration2
+      replace:
+        path: /etc/php-fpm.d/www.conf
+        regexp: ';listen.owner = nobody'
+        replace: 'listen.owner = nginx'
+      when:
+      - stack == "lemp"
+
+
+    - name: php configuration3
+      replace:
+        path: /etc/php-fpm.d/www.conf
+        regexp: ';listen.group = nobody'
+        replace: 'listen.group = nginx'
+      when:
+      - stack == "lemp"
+
+
+    - name: php configuration4
+      replace:
+        path: /etc/php-fpm.d/www.conf
+        regexp: 'user = apache'
+        replace: 'user = nginx'
+      when:
+      - stack == "lemp"
+
+
+
+    - name: php configuration5
+      replace:
+        path: /etc/php-fpm.d/www.conf
+        regexp: 'group = apache'
+        replace: 'group = nginx'
+      when:
+      - stack == "lemp"
+
+
+    - name: php configuration5
+      replace:
+        path: /etc/php-fpm.d/www.conf
+        regexp: 'listen = 127.0.0.1:9000'
+        replace: 'listen = /run/php-fpm/php-fpm.sock'
+      when:
+      - stack == "lemp"
+
+
+    - name: restarting php
+      service:
+        name: php-fpm
+        state: restarted
+      when:
+      - stack == "lemp"
+
+
+    - name: change php-fpm.sock ownership
+      file:
+        path: /run/php-fpm/php-fpm.sock
+        owner: nginx
+        group: nginx
+        mode: 0666
+      when:
+      - stack == "lemp"
+
+
+    - name: restarting php
+      service:
+        name: php-fpm
+        state: restarted
+      when:
+      - stack == "lemp"
+
+
+
+    - name: create virtual host
+      shell: 'touch /etc/nginx/default.d/default.conf'
+      when:
+      - stack == "lemp"
+
+
+    - name: insert virtual host configurations
+      blockinfile:
+        path: /etc/nginx/default.d/default.conf
+        block: " index index.php index.html index.htm;
+server_name 192.168.200.9;
+location ~ .php$ {
+try_files $uri =404;
+fastcgi_pass unix:/run/php-fpm/php-fpm.sock;
+fastcgi_index index.php;
+fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+include fastcgi_params;
+} "
+      when:
+      - stack == "lemp"
+
+    - name: restarting nginx
+      service:
+        name: nginx
+      when:
+      - stack == "lemp"
+
+    - name: unarchive wordpress
+      unarchive:
+        src: http://wordpress.org/latest.tar.gz
+        dest: /usr/share/nginx/html/
+        remote_src: True
+      when:
+      - stack == "lemp"
+
+
+    - name: change ownership
+      file:
+        path: /usr/share/nginx/html
+        owner: nginx
+        group: nginx
+        mode: 0755
+        recurse: yes
+      when:
+      - stack == "lemp"
+
+
+    - name: change wordpress document root
+      replace:
+        path: /etc/nginx/nginx.conf
+        regexp: '/usr/share/nginx/html'
+        replace: '/usr/share/nginx/html/wordpress'
+      when:
+      - stack == "lemp"
+
+
+    - name: unarchive wordpress
+      unarchive:
+        src: http://wordpress.org/latest.tar.gz
+        dest: /var/www/html
+        remote_src: True
+      when:
+      - stack == "lamp"
+
+    - name: wordpress configuration file
+      copy:
+        remote_src: True
+        src: /usr/share/nginx/html/wordpress/wp-config-sample.php
+        dest: /usr/share/nginx/html/wordpress/wp-config.php
+      when:
+      - stack == "lemp"
+
+
+    - name: change permission and ownership of config file
+      file:
+        path: /usr/share/nginx/html/wordpress/wp-config.php
+        owner: nginx
+        group: nginx
+        mode: 0777
+      when:
+      - stack == "lemp"
+
+
+    - name: wordpress db name configuration
+      replace:
+        path: /usr/share/nginx/html/wordpress/wp-config.php
+        regexp: 'database_name_here'
+        replace: 'wordpressdb'
+      when:
+      - stack == "lemp"
+
+    - name: wordpress db user configuration
+      replace:
+        path: /usr/share/nginx/html/wordpress/wp-config.php
+        regexp: 'username_here'
+        replace: 'wordpress'
+      when:
+      - stack == "lemp"
+
+    - name: wordpress db password configuration
+      replace:
+        path: /usr/share/nginx/html/wordpress/wp-config.php
+        regexp: 'password_here'
+        replace: 'wordpress'
+      when:
+      - stack == "lemp"
+
+    - name: restarting nginx
+      service:
+        name: nginx
+        state: restarted
+      when:
+      - stack == "lemp"
+
+
+    - name: wordpress configuration file
+      copy:
+        remote_src: True
+        src: /var/www/html/wordpress/wp-config-sample.php 
+        dest: /var/www/html/wordpress/index.php
+      when:
+      - stack == "lamp"
+
+    
+    - name: change ownership
+      file:
+        path: /var/www/html/
+        owner: apache
+        group: apache
+        mode: "u+x,g+x,o+x"
+        recurse: yes
+      when:
+      - stack == "lamp"
+
+
+    - name: wordpress db name configuration
+      replace:
+        path: /var/www/html/wordpress/index.php
+        regexp: 'database_name_here'
+        replace: 'wordpressdb'
+      when:
+      - stack == "lamp"
+
+    - name: wordpress db user configuration
+      replace:
+        path: /var/www/html/wordpress/index.php
+        regexp: 'username_here'
+        replace: 'wordpress'
+      when:
+      - stack == "lamp"
+
+    - name: wordpress db password configuration
+      replace:
+        path: /var/www/html/wordpress/index.php
+        regexp: 'password_here'
+        replace: 'wordpress'
+      when:
+      - stack == "lamp"
+
+    - name: restarting httpd service
+      service: name=httpd state=restarted enabled=yes
+      when:
+      - stack == "lamp"
+
+    - name: restarting php
+      service:
+        name: php-fpm
+        state: restarted
+      when:
+      - stack == "lamp"
+
